@@ -9,7 +9,7 @@ data Expr
   | Equal Expr Expr
   | NotEqual Expr Expr
   | Add Expr Expr
-  | Substract Expr Expr
+  | Subtract Expr Expr
   | Multiply Expr Expr
   | Divide Expr Expr
   | Call Name [Expr]
