@@ -3,10 +3,15 @@ module CodeGen (emitProgram, runEmitter) where
 import Ast
 import Control.Monad.State
 import Control.Monad.Writer
+import Data.Map (Map)
 
 type Asm = String
+type Offset = Integer
 
-newtype Env = Env {labelCount :: Int}
+newtype Env = Env {
+  labelCount :: Int,
+  locals :: Map Name Offset
+}
 
 type CodeGen = StateT Env (Writer Asm)
 
@@ -111,9 +116,9 @@ emitExpr (Function name params body) = do
 
 emitBinop :: String -> Expr -> Expr -> CodeGen ()
 emitBinop op left right = do
-  emitExpr left -- result in r0
-  emit "  push {r0, ip}" -- ip is dummy register
-  emitExpr right -- result in r0
+  emitExpr left
+  emit "  push {r0, ip}"
+  emitExpr right
   emit "  pop {r1, ip}"
   emit $ "  " <> op <> " r0, r1, r0"
 
