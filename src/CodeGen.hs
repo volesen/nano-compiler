@@ -92,7 +92,7 @@ emitExpr (If condition consequent alternative) = do
   emit $ elseLabel <> ":"
   emitExpr alternative
   emit $ endLabel <> ":"
-emitExpr (While condition   body) = do
+emitExpr (While condition body) = do
   startLabel <- label
   endLabel <- label
 
@@ -109,23 +109,24 @@ emitExpr (Function name params body) = do
   emit $ name <> ":"
 
   -- Prologue
-  emit $ "@ " <> name <> " prologue"
   emit "  push {fp, lr}"
   emit "  mov fp, sp"
   emit "  push {r0, r1, r2, r3}"
 
   -- Body
-  emit $ "@ " <> name <> " body"
   withLocals params $ emitExpr body
 
   -- Epilogue
-  emit $ "@ " <> name <> " epilogue"
   emit "  mov sp, fp" -- Deallocate stack
   emit "  mov r0, #0"
   emit "  pop {fp, pc}"
 emitExpr (Id name) = do
   offset <- getLocal name
   emit $ "  ldr r0, [fp, #" <> show offset <> "]"
+emitExpr (Return expr) = do
+  emitExpr expr
+  emit "  mov sp, fp"
+  emit "  pop {fp, pc}"
 
 withLocals :: [Name] -> CodeGen a -> CodeGen a
 withLocals params cg = do
