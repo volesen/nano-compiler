@@ -178,16 +178,33 @@ functionStmt = do
   where
     params = parens (ident `sepBy` symbol ",")
 
+assertStmt = do
+  symbol "assert"
+  value <- expr
+  symbol ";"
+
+  return (Assert value)
+
 stmt =
   returnStmt
     <|> ifStmt
     <|> whileStmt
     <|> varStmt
+    <|> assertStmt
     <|> functionStmt
     <|> blockStmt
     <|> try assignStmt
     <|> exprStmt
 
+
+
 -- * Program
 
-program = many stmt <* eof
+program = Program <$> many stmt <* eof
+
+-- * Entry point
+
+parse :: String -> Either String Program
+parse input = case runParser program "" input of
+  Left err -> Left (errorBundlePretty err)
+  Right ast -> Right ast
