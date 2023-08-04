@@ -94,6 +94,20 @@ emitExpr (While condition body) = do
   emitExpr body
   emit $ "  b " <> startLabel
   emit $ endLabel <> ":"
+emitExpr (Function name params body) = do
+  emit ""
+  emit $ ".global " <> name
+  emit $ name <> ":"
+  -- Prologue
+  emit "  push {fp, lr}"
+  emit "  mov fp, sp" -- Update fp
+  emit "  push {r0, r1, r2, r3}"
+  -- Body
+  emitExpr body
+  -- Epilogue
+  emit "  mov sp, fp" -- Deallocate stack
+  emit "  r0, #0"
+  emit "  pop {fp, pc}" 
 
 emitBinop :: String -> Expr -> Expr -> CodeGen ()
 emitBinop op left right = do
