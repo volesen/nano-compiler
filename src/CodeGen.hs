@@ -3,15 +3,17 @@ module CodeGen (emitProgram, runEmitter) where
 import Ast
 import Control.Monad.State
 import Control.Monad.Writer
-import Data.Map (Map)
+import Data.Map (Map, empty, insert, lookup)
+import qualified Data.Map as Map
 
 type Asm = String
+
 type Offset = Integer
 
-newtype Env = Env {
-  labelCount :: Int,
-  locals :: Map Name Offset
-}
+data Env = Env
+  { labelCount :: Int,
+    locals :: Map Name Offset
+  }
 
 type CodeGen = StateT Env (Writer Asm)
 
@@ -25,40 +27,42 @@ label = do
   put env {labelCount = count + 1}
   return $ "L" <> show count
 
+getLocal :: Name -> CodeGen Offset
+getLocal name = do
+  env <- get
+  case Data.Map.lookup name (locals env) of
+    Just offset -> return offset
+    Nothing -> do
+      let offset = 4 * fromIntegral (length (locals env))
+      put env {locals = insert name offset (locals env)}
+      return offset
+
 emitExpr :: Expr -> CodeGen ()
 emitExpr (Number n) = emit $ "  ldr r0, =" <> show n
-emitExpr (Assert condition) = do
-  emitExpr condition -- result in r0
-  emit "  cmp r0, #1"
-  emit "  moveq r0, #'.'"
-  emit "  movne r0, #'F'"
-  emit "  bl putchar"
 emitExpr (Not expr) = do
-  emitExpr expr -- result in r0
+  emitExpr expr
   emit "  cmp r0, #0"
   emit "  moveq r0, #1"
   emit "  movne r0, #0"
-emitExpr (Add left right) =
-  emitBinop "add" left right
-emitExpr (Subtract left right) =
-  emitBinop "sub" left right
-emitExpr (Multiply left right) =
-  emitBinop "mul" left right
-emitExpr (Divide left right) =
-  emitBinop "udiv" left right
+emitExpr (Add left right) = do
+  emitBinop left right
+  emit "  add r0, r1, r0"
+emitExpr (Subtract left right) = do
+  emitBinop left right
+  emit "  sub r0, r1, r0"
+emitExpr (Multiply left right) = do
+  emitBinop left right
+  emit "  mul r0, r1, r0"
+emitExpr (Divide left right) = do
+  emitBinop left right
+  emit "  udiv r0, r1, r0"
 emitExpr (Equal left right) = do
-  emitExpr left -- result in r0
-  emit "  push {r0, ip}" -- ip is dummy register
-  emitExpr right -- result in r0
-  emit "  pop {r1, ip}"
+  emitBinop left right
   emit "  cmp r0, r1"
   emit "  moveq r0, #1"
   emit "  movne r0, #0"
 emitExpr (NotEqual left right) = do
-  emitExpr left -- result in r0
-  emit "  push {r0, ip}" -- ip is dummy register
-  emitExpr right -- result in r0
-  emit "  pop {r1, ip}" -- move
+  emitBinop left right
   emit "  cmp r0, r1"
   emit "  moveq r0, #0"
   emit "  movne r0, #1"
@@ -103,36 +107,47 @@ emitExpr (Function name params body) = do
   emit ""
   emit $ ".global " <> name
   emit $ name <> ":"
+
   -- Prologue
   emit "  push {fp, lr}"
-  emit "  mov fp, sp" -- Update fp
+  emit "  mov fp, sp"
   emit "  push {r0, r1, r2, r3}"
+
   -- Body
-  emitExpr body
+  withLocals params $ emitExpr body
+
   -- Epilogue
   emit "  mov sp, fp" -- Deallocate stack
-  emit "  r0, #0"
-  emit "  pop {fp, pc}" 
+  emit "  mov r0, #0"
+  emit "  pop {fp, pc}"
+emitExpr (Id name) = do
+  offset <- getLocal name
+  emit $ "  ldr r0, [fp, #" <> show offset <> "]"
 
-emitBinop :: String -> Expr -> Expr -> CodeGen ()
-emitBinop op left right = do
+withLocals :: [Name] -> CodeGen a -> CodeGen a
+withLocals params cg = do
+  env <- get
+  let oldLocals = locals env
+  let newLocals = Map.fromList (zip params [-16, -12 ..])
+  put env {locals = newLocals}
+  result <- cg
+  put env {locals = oldLocals}
+  return result
+
+-- | Emit code for a binary operation. The results are left in r0 and r1.
+emitBinop :: Expr -> Expr -> CodeGen ()
+emitBinop left right = do
   emitExpr left
   emit "  push {r0, ip}"
   emitExpr right
   emit "  pop {r1, ip}"
-  emit $ "  " <> op <> " r0, r1, r0"
 
 emitProgram :: Program -> CodeGen ()
 emitProgram (Program statements) = do
-  emit ".global main"
-  emit "main:"
-  emit "  push {fp, lr}"
   mapM_ emitExpr statements
-  emit "  mov r0, #0"
-  emit "  pop {fp, pc}"
 
 initEnv :: Env
-initEnv = Env {labelCount = 0}
+initEnv = Env {labelCount = 0, locals = empty}
 
 runEmitter :: CodeGen a -> String
 runEmitter cg = execWriter $ runStateT cg initEnv
