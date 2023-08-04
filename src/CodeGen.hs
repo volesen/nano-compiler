@@ -1,20 +1,24 @@
 module CodeGen (emitProgram, runEmitter) where
 
 import Ast
-import Control.Monad.Identity (Identity)
-import Control.Monad.Reader
+import Control.Monad.State
 import Control.Monad.Writer
 
 type Asm = String
 
 newtype Env = Env {labelCount :: Int}
 
-type CodeGen = WriterT Asm Identity
-
--- type CodeGen = Writer String ()
+type CodeGen = StateT Env (Writer Asm)
 
 emit :: String -> CodeGen ()
 emit line = tell (line <> "\n")
+
+label :: CodeGen String
+label = do
+  env <- get
+  let count = labelCount env
+  put env {labelCount = count + 1}
+  return $ "L" <> show count
 
 emitExpr :: Expr -> CodeGen ()
 emitExpr (Number n) = emit $ "  ldr r0, =" <> show n
@@ -85,5 +89,8 @@ emitProgram (Program statements) = do
   emit "  mov r0, #0"
   emit "  pop {fp, pc}"
 
-runEmitter :: CodeGen () -> String
-runEmitter = execWriter
+initEnv :: Env
+initEnv = Env {labelCount = 0}
+
+runEmitter :: CodeGen a -> String
+runEmitter cg = execWriter $ runStateT cg initEnv
