@@ -71,6 +71,20 @@ emitExpr (Call calee args) | length args <= 4 = do
     emit $ "  str r0, [sp, #" <> show offset <> "]"
   emit "  pop {r0, r1, r3, r4}"
   emit $ "  bl " <> calee
+emitExpr (If condition consequent alternative) = do
+  ifLabel <- label
+  elseLabel <- label
+  endLabel <- label
+  emitExpr condition -- result in r0
+  emit "  cmp r0, #1"
+  emit $ "  beq " <> ifLabel
+  emit $ "  bne " <> elseLabel
+  emit $ ifLabel <> ":"
+  emitExpr consequent
+  emit $ "  b " <> endLabel
+  emit $ elseLabel <> ":"
+  emitExpr alternative
+  emit $ endLabel <> ":"
 
 emitBinop :: String -> Expr -> Expr -> CodeGen ()
 emitBinop op left right = do
