@@ -83,6 +83,17 @@ emitExpr (If condition consequent alternative) = do
   emit $ elseLabel <> ":"
   emitExpr alternative
   emit $ endLabel <> ":"
+emitExpr (While condition body) = do
+  startLabel <- label
+  endLabel <- label
+
+  emit $ startLabel <> ":"
+  emitExpr condition
+  emit "  cmp r0, #0"
+  emit $ "  beq " <> endLabel
+  emitExpr body
+  emit $ "  b " <> startLabel
+  emit $ endLabel <> ":"
 
 emitBinop :: String -> Expr -> Expr -> CodeGen ()
 emitBinop op left right = do
