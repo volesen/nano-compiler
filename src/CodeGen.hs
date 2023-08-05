@@ -41,10 +41,10 @@ getLocal name = do
 setLocal :: Name -> CodeGen ()
 setLocal name = do
   env <- get
-  let offset = nextLocal env - 4
+  let offset = nextLocal env
   put
     env
-      { locals = insert name offset (locals env),
+      { locals = insert name (offset - 4) (locals env),
         nextLocal = offset - 8
       }
 
@@ -142,15 +142,7 @@ emitExpr (Return expr) = do
 emitExpr (Var name expr) = do
   emitExpr expr
   emit "  push {r0, ip}"
-
-  -- Add to locals
-  env <- get
-  let offset = nextLocal env - 4
-  put
-    env
-      { locals = insert name offset (locals env),
-        nextLocal = nextLocal env - 8
-      }
+  setLocal name
 
 withParams :: [Name] -> CodeGen a -> CodeGen a
 withParams params codegen = do
