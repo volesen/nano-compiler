@@ -9,5 +9,5 @@ import Parser (parseProgram)
 compile :: String -> Either String String
 compile src = do
   ast <- parseProgram src
-  let asm = execCodeGen (emitProgram ast)
+  asm <- execCodeGen (emitProgram ast)
   return asm
