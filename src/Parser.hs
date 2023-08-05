@@ -1,7 +1,7 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
 {-# HLINT ignore "Use <$>" #-}
-module Parser where
+module Parser (parseProgram) where
 
 import Ast
 import Control.Monad.Combinators
@@ -72,33 +72,41 @@ ident = lexeme $ do
         "function"
       ]
 
+number :: Parser Literal
 number = Number <$> integer
 
+numberLit :: Parser Expr
+numberLit = Lit <$> number
+
+id :: Parser Expr
 id = Id <$> ident
 
+call :: Parser Expr
 call = Call <$> ident <*> parens args
   where
     args = expr `sepBy` symbol ","
 
+term :: Parser Expr
 term =
   try call
     <|> id
-    <|> number
+    <|> numberLit
     <|> parens expr
 
+expr :: Parser Expr
 expr = makeExprParser term table
   where
     table =
-      [ [ Prefix (Not <$ symbol "!")
+      [ [ Prefix (UnOp Not <$ symbol "!")
         ],
-        [ InfixL (Multiply <$ symbol "*"),
-          InfixL (Divide <$ symbol "/")
+        [ InfixL (BinOp Multiply <$ symbol "*"),
+          InfixL (BinOp Divide <$ symbol "/")
         ],
-        [ InfixL (Add <$ symbol "+"),
-          InfixL (Subtract <$ symbol "-")
+        [ InfixL (BinOp Add <$ symbol "+"),
+          InfixL (BinOp Subtract <$ symbol "-")
         ],
-        [ InfixL (Equal <$ symbol "=="),
-          InfixL (NotEqual <$ symbol "!=")
+        [ InfixL (BinOp Equal <$ symbol "=="),
+          InfixL (BinOp NotEqual <$ symbol "!=")
         ]
       ]
 
@@ -124,6 +132,7 @@ statement          ::= returnStatement
                         | expressionStatement
 -}
 
+returnStmt :: Parser Stmt
 returnStmt = do
   symbol "return"
   value <- expr
@@ -131,8 +140,10 @@ returnStmt = do
 
   return (Return value)
 
-exprStmt = expr <* symbol ";"
+exprStmt :: Parser Stmt
+exprStmt = Expr <$> expr <* symbol ";"
 
+ifStmt :: Parser Stmt
 ifStmt = do
   symbol "if"
   condition <- parens expr
@@ -142,6 +153,7 @@ ifStmt = do
 
   return (If condition consequent alternative)
 
+whileStmt :: Parser Stmt
 whileStmt = do
   symbol "while"
   condition <- parens expr
@@ -149,6 +161,7 @@ whileStmt = do
 
   return (While condition body)
 
+varStmt :: Parser Stmt
 varStmt = do
   symbol "var"
   name <- ident
@@ -158,6 +171,7 @@ varStmt = do
 
   return (Var name value)
 
+assignStmt :: Parser Stmt
 assignStmt = do
   name <- ident
   symbol "="
@@ -166,8 +180,10 @@ assignStmt = do
 
   return (Assign name value)
 
+blockStmt :: Parser Stmt
 blockStmt = Block <$> braces (many stmt)
 
+functionStmt :: Parser Stmt
 functionStmt = do
   symbol "function"
   name <- ident
@@ -178,6 +194,7 @@ functionStmt = do
   where
     params = parens (ident `sepBy` symbol ",")
 
+stmt :: Parser Stmt
 stmt =
   returnStmt
     <|> ifStmt
@@ -190,4 +207,10 @@ stmt =
 
 -- * Program
 
-program = many stmt <* eof
+program = Program <$> many stmt <* eof
+
+parseProgram :: String -> Either String Program
+parseProgram src =
+  case parse program "" src of
+    Left err -> Left $ errorBundlePretty err
+    Right ast -> Right ast
