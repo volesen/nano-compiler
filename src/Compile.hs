@@ -3,10 +3,11 @@ module Compile
   )
 where
 
-import CodeGen (emitProgram, runEmitter)
-import Parser (parse)
+import CodeGen (emitProgram, execCodeGen)
+import Parser (parseProgram)
 
 compile :: String -> Either String String
 compile src = do
-  ast <- parse src
-  return $ runEmitter $ emitProgram ast
+  ast <- parseProgram src
+  let asm = execCodeGen (emitProgram ast)
+  return asm

@@ -1,7 +1,7 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
 {-# HLINT ignore "Use <$>" #-}
-module Parser where
+module Parser (parseProgram) where
 
 import Ast
 import Control.Monad.Combinators
@@ -209,9 +209,8 @@ stmt =
 
 program = Program <$> many stmt <* eof
 
--- * Entry point
-
-parse :: String -> Either String Program
-parse input = case runParser program "" input of
-  Left err -> Left (errorBundlePretty err)
-  Right ast -> Right ast
+parseProgram :: String -> Either String Program
+parseProgram src =
+  case parse program "" src of
+    Left err -> Left $ errorBundlePretty err
+    Right ast -> Right ast

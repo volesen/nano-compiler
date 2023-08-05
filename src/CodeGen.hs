@@ -1,4 +1,4 @@
-module CodeGen (emitProgram, runEmitter) where
+module CodeGen (runCodeGen, execCodeGen, emitProgram) where
 
 import Ast
 import Control.Monad.State
@@ -9,13 +9,26 @@ type Asm = String
 
 type Offset = Integer
 
+-- * Code generation context
+
 data Ctx = Ctx
   { labelCount :: Int,
     locals :: Map.Map Name Offset,
     nextLocal :: Offset
   }
 
+initCtx :: Ctx
+initCtx = Ctx {labelCount = 0, locals = Map.empty, nextLocal = 0}
+
+-- * Code generation monad
+
 type CodeGen a = StateT Ctx (Writer Asm) a
+
+runCodeGen :: CodeGen a -> (a, Asm)
+runCodeGen = runWriter . flip evalStateT initCtx
+
+execCodeGen :: CodeGen a -> Asm
+execCodeGen = snd . runCodeGen
 
 emit :: String -> CodeGen ()
 emit line = tell (line <> "\n")
@@ -27,15 +40,16 @@ label = do
   put ctx {labelCount = count + 1}
   return $ "L" <> show count
 
+setupLocals :: [Name] -> CodeGen ()
+setupLocals params =
+  modify $ \ctx -> ctx {nextLocal = -4 * fromIntegral (length params)}
+
 getLocal :: Name -> CodeGen Offset
 getLocal name = do
   ctx <- get
   case Map.lookup name (locals ctx) of
     Just offset -> return offset
-    Nothing -> do
-      let offset = 4 * fromIntegral (length (locals ctx))
-      put ctx {locals = Map.insert name offset (locals ctx)}
-      return offset
+    Nothing -> error $ "Local variable " <> name <> " not found"
 
 setLocal :: Name -> CodeGen ()
 setLocal name =
@@ -46,8 +60,13 @@ setLocal name =
             nextLocal = offset - 8
           }
 
+-- * Emitting
+
+emitLit :: Literal -> CodeGen ()
+emitLit (Number n) = emit $ "  ldr r0, =" <> show n
+
 emitExpr :: Expr -> CodeGen ()
-emitExpr (Lit (Number n)) = emit $ "  ldr r0, =" <> show n
+emitExpr (Lit lit) = emitLit lit
 emitExpr (UnOp op expr) = emitUnOp op expr
 emitExpr (BinOp op left right) = emitBinOp op left right
 emitExpr (Id name) = do
@@ -154,16 +173,6 @@ emitStmt (Assign name expr) = do
   offset <- getLocal name
   emit $ "  str r0, [fp, #" <> show offset <> "]"
 
-setupLocals :: [Name] -> CodeGen ()
-setupLocals params =
-  modify $ \ctx -> ctx {nextLocal = -4 * fromIntegral (length params)}
-
 emitProgram :: Program -> CodeGen ()
 emitProgram (Program statements) =
   mapM_ emitStmt statements
-
-initCtx :: Ctx
-initCtx = Ctx {labelCount = 0, locals = Map.empty, nextLocal = 0}
-
-runEmitter :: CodeGen a -> String
-runEmitter cg = execWriter $ runStateT cg initCtx
