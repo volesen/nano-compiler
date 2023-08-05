@@ -1,6 +1,7 @@
-module CodeGen (runCodeGen, execCodeGen, emitProgram) where
+module CodeGen (execCodeGen, emitProgram) where
 
 import Ast
+import Control.Monad.Except
 import Control.Monad.State
 import Control.Monad.Writer
 import qualified Data.Map as Map
@@ -8,6 +9,8 @@ import qualified Data.Map as Map
 type Asm = String
 
 type Offset = Integer
+
+type Error = String
 
 -- * Code generation context
 
@@ -22,34 +25,34 @@ initCtx = Ctx {labelCount = 0, locals = Map.empty, nextLocal = 0}
 
 -- * Code generation monad
 
-type CodeGen a = StateT Ctx (Writer Asm) a
+type CodeGen = StateT Ctx (WriterT Asm (Except Error))
 
-runCodeGen :: CodeGen a -> (a, Asm)
-runCodeGen = runWriter . flip evalStateT initCtx
-
-execCodeGen :: CodeGen a -> Asm
-execCodeGen = snd . runCodeGen
+execCodeGen :: CodeGen a -> Either Error Asm
+execCodeGen = runExcept . execWriterT . flip evalStateT initCtx
 
 emit :: String -> CodeGen ()
 emit line = tell (line <> "\n")
 
 label :: CodeGen String
 label = do
-  ctx <- get
-  let count = labelCount ctx
-  put ctx {labelCount = count + 1}
-  return $ "L" <> show count
+  count <- gets labelCount
+  modify $ \ctx -> ctx {labelCount = count + 1}
+  return $ ".L" <> show count
 
 setupLocals :: [Name] -> CodeGen ()
 setupLocals params =
-  modify $ \ctx -> ctx {nextLocal = -4 * fromIntegral (length params)}
+  modify $ \ctx ->
+    ctx
+      { locals = Map.fromList (zip params [-16, -12 ..]),
+        nextLocal = -20
+      }
 
 getLocal :: Name -> CodeGen Offset
 getLocal name = do
   ctx <- get
   case Map.lookup name (locals ctx) of
     Just offset -> return offset
-    Nothing -> error $ "Local variable " <> name <> " not found"
+    Nothing -> throwError $ "Unknown variable: " <> name
 
 setLocal :: Name -> CodeGen ()
 setLocal name =
@@ -84,6 +87,7 @@ emitExpr (Call calee args) | length args <= 4 = do
     emit $ "  str r0, [sp, #" <> show offset <> "]"
   emit "  pop {r0, r1, r2, r3}"
   emit $ "  bl " <> calee
+emitExpr (Call {}) = throwError "Unsupported: more than 4 arguments"
 
 emitUnOp :: UnOp -> Expr -> CodeGen ()
 emitUnOp Not expr = do
@@ -142,7 +146,7 @@ emitStmt (While condition body) = do
   emitStmt body
   emit $ "  b " <> startLabel
   emit $ endLabel <> ":"
-emitStmt (Function name params body) = do
+emitStmt (Function name params body) | length params <= 4 = do
   emit ""
   emit $ ".global " <> name
   emit $ name <> ":"
@@ -160,6 +164,7 @@ emitStmt (Function name params body) = do
   emit "  mov sp, fp"
   emit "  mov r0, #0"
   emit "  pop {fp, pc}"
+emitStmt (Function {}) = throwError "Unsupported: more than 4 parameters"
 emitStmt (Return expr) = do
   emitExpr expr
   emit "  mov sp, fp"
