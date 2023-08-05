@@ -9,44 +9,42 @@ type Asm = String
 
 type Offset = Integer
 
-data Env = Env
+data Ctx = Ctx
   { labelCount :: Int,
     locals :: Map.Map Name Offset,
     nextLocal :: Offset
   }
 
-type CodeGen = StateT Env (Writer Asm)
+type CodeGen a = StateT Ctx (Writer Asm) a
 
 emit :: String -> CodeGen ()
 emit line = tell (line <> "\n")
 
 label :: CodeGen String
 label = do
-  env <- get
-  let count = labelCount env
-  put env {labelCount = count + 1}
+  ctx <- get
+  let count = labelCount ctx
+  put ctx {labelCount = count + 1}
   return $ "L" <> show count
 
 getLocal :: Name -> CodeGen Offset
 getLocal name = do
-  env <- get
-  case Map.lookup name (locals env) of
+  ctx <- get
+  case Map.lookup name (locals ctx) of
     Just offset -> return offset
     Nothing -> do
-      let offset = 4 * fromIntegral (length (locals env))
-      put env {locals = Map.insert name offset (locals env)}
+      let offset = 4 * fromIntegral (length (locals ctx))
+      put ctx {locals = Map.insert name offset (locals ctx)}
       return offset
 
 setLocal :: Name -> CodeGen ()
 setLocal name =
-  modify
-    ( \env ->
-        let offset = nextLocal env
-         in env
-              { locals = Map.insert name (offset - 4) (locals env),
-                nextLocal = offset - 8
-              }
-    )
+  modify $ \ctx ->
+    let offset = nextLocal ctx
+     in ctx
+          { locals = Map.insert name (offset - 4) (locals ctx),
+            nextLocal = offset - 8
+          }
 
 emitExpr :: Expr -> CodeGen ()
 emitExpr (Lit (Number n)) = emit $ "  ldr r0, =" <> show n
@@ -158,14 +156,14 @@ emitStmt (Assign name expr) = do
 
 setupLocals :: [Name] -> CodeGen ()
 setupLocals params =
-  modify $ \env -> env {nextLocal = -4 * fromIntegral (length params)}
+  modify $ \ctx -> ctx {nextLocal = -4 * fromIntegral (length params)}
 
 emitProgram :: Program -> CodeGen ()
-emitProgram (Program statements) = do
+emitProgram (Program statements) =
   mapM_ emitStmt statements
 
-initEnv :: Env
-initEnv = Env {labelCount = 0, locals = Map.empty, nextLocal = 0}
+initCtx :: Ctx
+initCtx = Ctx {labelCount = 0, locals = Map.empty, nextLocal = 0}
 
 runEmitter :: CodeGen a -> String
-runEmitter cg = execWriter $ runStateT cg initEnv
+runEmitter cg = execWriter $ runStateT cg initCtx
