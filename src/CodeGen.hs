@@ -143,6 +143,10 @@ emitExpr (Var name expr) = do
   emitExpr expr
   emit "  push {r0, ip}"
   setLocal name
+emitExpr (Assign name expr) = do
+  emitExpr expr
+  offset <- getLocal name
+  emit $ "  str r0, [fp, #" <> show offset <> "]"
 
 withParams :: [Name] -> CodeGen a -> CodeGen a
 withParams params codegen = do
