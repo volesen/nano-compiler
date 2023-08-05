@@ -178,25 +178,15 @@ functionStmt = do
   where
     params = parens (ident `sepBy` symbol ",")
 
-assertStmt = do
-  symbol "assert"
-  value <- expr
-  symbol ";"
-
-  return (Assert value)
-
 stmt =
   returnStmt
     <|> ifStmt
     <|> whileStmt
     <|> varStmt
-    <|> assertStmt
     <|> functionStmt
     <|> blockStmt
     <|> try assignStmt
     <|> exprStmt
-
-
 
 -- * Program
 

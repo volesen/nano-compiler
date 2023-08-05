@@ -22,7 +22,6 @@ data Expr
   | Var Name Expr
   | Assign Name Expr
   | While Expr Expr
-  | Assert Expr
   deriving (Eq, Show)
 
 data Program = Program [Expr]
