@@ -2,25 +2,41 @@ module Ast where
 
 type Name = String
 
-data Expr
+newtype Literal
   = Number Integer
-  | Id Name
-  | Not Expr
-  | Equal Expr Expr
-  | NotEqual Expr Expr
-  | Add Expr Expr
-  | Subtract Expr Expr
-  | Multiply Expr Expr
-  | Divide Expr Expr
-  | Call Name [Expr]
-  | Return Expr
-  | Block [Expr]
-  | If Expr Expr Expr
-  | Function Name [Name] Expr
-  | Var Name Expr
-  | Assign Name Expr
-  | While Expr Expr
+  deriving (Show)
+
+data UnOp
+  = Not
+  deriving (Show)
+
+data BinOp
+  = Add
+  | Subtract
+  | Multiply
+  | Divide
+  | Equal
+  | NotEqual
   deriving (Eq, Show)
 
-newtype Program = Program [Expr]
-  deriving (Eq, Show)
+data Expr
+  = Lit Literal
+  | Id Name
+  | UnOp UnOp Expr
+  | BinOp BinOp Expr Expr
+  | Call Name [Expr]
+  deriving (Show)
+
+data Stmt
+  = Return Expr
+  | Block [Expr]
+  | If Expr Stmt Stmt
+  | Function Name [Name] Stmt
+  | Var Name Expr
+  | Assign Name Expr
+  | While Expr Stmt
+  | Expr Expr
+  deriving (Show)
+
+newtype Program = Program [Stmt]
+  deriving (Show)
