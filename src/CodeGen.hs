@@ -39,16 +39,16 @@ getLocal name = do
       return offset
 
 setLocal :: Name -> CodeGen ()
-setLocal name = do
-  env <- get
-  let offset = nextLocal env
-  put
-    env
-      { locals = insert name (offset - 4) (locals env),
-        nextLocal = offset - 8
-      }
+setLocal name =
+  modify
+    ( \env ->
+        let offset = nextLocal env
+         in env
+              { locals = insert name (offset - 4) (locals env),
+                nextLocal = offset - 8
+              }
+    )
 
--- In
 emitExpr :: Expr -> CodeGen ()
 emitExpr (Number n) = emit $ "  ldr r0, =" <> show n
 emitExpr (Not expr) = do
