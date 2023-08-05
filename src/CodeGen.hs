@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-
 module CodeGen (emitProgram, runEmitter) where
 
 import Ast
@@ -14,7 +12,8 @@ type Offset = Integer
 
 data Env = Env
   { labelCount :: Int,
-    locals :: Map Name Offset
+    locals :: Map Name Offset,
+    nextLocal :: Offset
   }
 
 type CodeGen = StateT Env (Writer Asm)
@@ -39,6 +38,17 @@ getLocal name = do
       put env {locals = insert name offset (locals env)}
       return offset
 
+setLocal :: Name -> CodeGen ()
+setLocal name = do
+  env <- get
+  let offset = nextLocal env - 4
+  put
+    env
+      { locals = insert name offset (locals env),
+        nextLocal = offset - 8
+      }
+
+-- In
 emitExpr :: Expr -> CodeGen ()
 emitExpr (Number n) = emit $ "  ldr r0, =" <> show n
 emitExpr (Not expr) = do
@@ -116,7 +126,7 @@ emitExpr (Function name params body) = do
   emit "  push {r0, r1, r2, r3}"
 
   -- Body
-  withLocals params $ emitExpr body
+  withParams params $ emitExpr body
 
   -- Epilogue
   emit "  mov sp, fp" -- Deallocate stack
@@ -129,17 +139,25 @@ emitExpr (Return expr) = do
   emitExpr expr
   emit "  mov sp, fp"
   emit "  pop {fp, pc}"
+emitExpr (Var name expr) = do
+  emitExpr expr
+  emit "  push {r0, ip}"
 
-withLocals :: [Name] -> CodeGen a -> CodeGen a
-withLocals params cg = do
+  -- Add to locals
   env <- get
-  let oldLocals = locals env
-  let newLocals = Map.fromList (zip params [-16, -12 ..])
-  put $ env {locals = newLocals}
-  result <- cg
+  let offset = nextLocal env - 4
+  put
+    env
+      { locals = insert name offset (locals env),
+        nextLocal = nextLocal env - 8
+      }
+
+withParams :: [Name] -> CodeGen a -> CodeGen a
+withParams params codegen = do
   env <- get
-  put env {locals = oldLocals}
-  return result
+  let locals = Map.fromList (zip params [-16, -12 ..])
+  put $ env {locals = locals, nextLocal = -20}
+  codegen
 
 emitBinop :: Expr -> Expr -> CodeGen ()
 emitBinop left right = do
@@ -153,7 +171,7 @@ emitProgram (Program statements) = do
   mapM_ emitExpr statements
 
 initEnv :: Env
-initEnv = Env {labelCount = 0, locals = empty}
+initEnv = Env {labelCount = 0, locals = empty, nextLocal = 0}
 
 runEmitter :: CodeGen a -> String
 runEmitter cg = execWriter $ runStateT cg initEnv
