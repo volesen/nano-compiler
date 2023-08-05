@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedRecordDot #-}
+
 module CodeGen (emitProgram, runEmitter) where
 
 import Ast
@@ -133,12 +135,12 @@ withLocals params cg = do
   env <- get
   let oldLocals = locals env
   let newLocals = Map.fromList (zip params [-16, -12 ..])
-  put env {locals = newLocals}
+  put $ env {locals = newLocals}
   result <- cg
+  env <- get
   put env {locals = oldLocals}
   return result
 
--- | Emit code for a binary operation. The results are left in r0 and r1.
 emitBinop :: Expr -> Expr -> CodeGen ()
 emitBinop left right = do
   emitExpr left
