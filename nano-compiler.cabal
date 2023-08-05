@@ -22,14 +22,23 @@ maintainer:         vincolesen@gmail.com
 extra-source-files: CHANGELOG.md
 
 library
-    exposed-modules:  MyLib
+    exposed-modules:  Compile
 
     -- Modules included in this library but not exported.
-    -- other-modules:
-
+    other-modules:
+        Ast,
+        Parser,
+        CodeGen
+        
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
-    build-depends:    base ^>=4.16.4.0
+    build-depends:
+        base ^>=4.16.4.0,
+        mtl,
+        containers,
+        megaparsec,
+        parser-combinators
+
     hs-source-dirs:   src
     default-language: Haskell2010
 
@@ -43,6 +52,7 @@ executable nano-compiler
     -- other-extensions:
     build-depends:
         base ^>=4.16.4.0,
+        optparse-applicative,
         nano-compiler
 
     hs-source-dirs:   app
