@@ -3,7 +3,6 @@ module CodeGen (emitProgram, runEmitter) where
 import Ast
 import Control.Monad.State
 import Control.Monad.Writer
-import Data.Map (Map, empty, insert, lookup)
 import qualified Data.Map as Map
 
 type Asm = String
@@ -12,7 +11,7 @@ type Offset = Integer
 
 data Env = Env
   { labelCount :: Int,
-    locals :: Map Name Offset,
+    locals :: Map.Map Name Offset,
     nextLocal :: Offset
   }
 
@@ -31,11 +30,11 @@ label = do
 getLocal :: Name -> CodeGen Offset
 getLocal name = do
   env <- get
-  case Data.Map.lookup name (locals env) of
+  case Map.lookup name (locals env) of
     Just offset -> return offset
     Nothing -> do
       let offset = 4 * fromIntegral (length (locals env))
-      put env {locals = insert name offset (locals env)}
+      put env {locals = Map.insert name offset (locals env)}
       return offset
 
 setLocal :: Name -> CodeGen ()
@@ -44,42 +43,18 @@ setLocal name =
     ( \env ->
         let offset = nextLocal env
          in env
-              { locals = insert name (offset - 4) (locals env),
+              { locals = Map.insert name (offset - 4) (locals env),
                 nextLocal = offset - 8
               }
     )
 
 emitExpr :: Expr -> CodeGen ()
-emitExpr (Number n) = emit $ "  ldr r0, =" <> show n
-emitExpr (Not expr) = do
-  emitExpr expr
-  emit "  cmp r0, #0"
-  emit "  moveq r0, #1"
-  emit "  movne r0, #0"
-emitExpr (Add left right) = do
-  emitBinop left right
-  emit "  add r0, r1, r0"
-emitExpr (Subtract left right) = do
-  emitBinop left right
-  emit "  sub r0, r1, r0"
-emitExpr (Multiply left right) = do
-  emitBinop left right
-  emit "  mul r0, r1, r0"
-emitExpr (Divide left right) = do
-  emitBinop left right
-  emit "  udiv r0, r1, r0"
-emitExpr (Equal left right) = do
-  emitBinop left right
-  emit "  cmp r0, r1"
-  emit "  moveq r0, #1"
-  emit "  movne r0, #0"
-emitExpr (NotEqual left right) = do
-  emitBinop left right
-  emit "  cmp r0, r1"
-  emit "  moveq r0, #0"
-  emit "  movne r0, #1"
-emitExpr (Block exprs) = do
-  mapM_ emitExpr exprs
+emitExpr (Lit (Number n)) = emit $ "  ldr r0, =" <> show n
+emitExpr (UnOp op expr) = emitUnOp op expr
+emitExpr (BinOp op left right) = emitBinOp op left right
+emitExpr (Id name) = do
+  offset <- getLocal name
+  emit $ "  ldr r0, [fp, #" <> show offset <> "]"
 emitExpr (Call calee []) = do
   emit $ "  bl " <> calee
 emitExpr (Call calee [arg]) = do
@@ -92,19 +67,54 @@ emitExpr (Call calee args) | length args <= 4 = do
     emit $ "  str r0, [sp, #" <> show offset <> "]"
   emit "  pop {r0, r1, r2, r3}"
   emit $ "  bl " <> calee
-emitExpr (If condition consequent alternative) = do
+
+emitUnOp :: UnOp -> Expr -> CodeGen ()
+emitUnOp Not expr = do
+  emitExpr expr
+  emit "  cmp r0, #0"
+  emit "  moveq r0, #1"
+  emit "  movne r0, #0"
+
+emitBinOp :: BinOp -> Expr -> Expr -> CodeGen ()
+emitBinOp op left right = do
+  emitExpr left
+  emit "  push {r0, ip}"
+  emitExpr right
+  emit "  pop {r1, ip}"
+  case op of
+    Add ->
+      emit "  add r0, r1, r0"
+    Subtract ->
+      emit "  sub r0, r1, r0"
+    Multiply ->
+      emit "  mul r0, r1, r0"
+    Divide ->
+      emit "  udiv r0, r1, r0"
+    Equal -> do
+      emit "  cmp r0, r1"
+      emit "  moveq r0, #1"
+      emit "  movne r0, #0"
+    NotEqual -> do
+      emit "  cmp r0, r1"
+      emit "  moveq r0, #0"
+      emit "  movne r0, #1"
+
+emitStmt :: Stmt -> CodeGen ()
+emitStmt (Expr expr) = emitExpr expr
+emitStmt (Block stmts) = mapM_ emitStmt stmts
+emitStmt (If condition consequent alternative) = do
   elseLabel <- label
   endLabel <- label
 
   emitExpr condition
   emit "  cmp r0, #0"
   emit $ "  beq " <> elseLabel
-  emitExpr consequent
+  emitStmt consequent
   emit $ "  b " <> endLabel
   emit $ elseLabel <> ":"
-  emitExpr alternative
+  emitStmt alternative
   emit $ endLabel <> ":"
-emitExpr (While condition body) = do
+emitStmt (While condition body) = do
   startLabel <- label
   endLabel <- label
 
@@ -112,10 +122,10 @@ emitExpr (While condition body) = do
   emitExpr condition
   emit "  cmp r0, #0"
   emit $ "  beq " <> endLabel
-  emitExpr body
+  emitStmt body
   emit $ "  b " <> startLabel
   emit $ endLabel <> ":"
-emitExpr (Function name params body) = do
+emitStmt (Function name params body) = do
   emit ""
   emit $ ".global " <> name
   emit $ name <> ":"
@@ -126,48 +136,36 @@ emitExpr (Function name params body) = do
   emit "  push {r0, r1, r2, r3}"
 
   -- Body
-  withParams params $ emitExpr body
+  setupLocals params
+  emitStmt body
 
   -- Epilogue
-  emit "  mov sp, fp" -- Deallocate stack
+  emit "  mov sp, fp"
   emit "  mov r0, #0"
   emit "  pop {fp, pc}"
-emitExpr (Id name) = do
-  offset <- getLocal name
-  emit $ "  ldr r0, [fp, #" <> show offset <> "]"
-emitExpr (Return expr) = do
+emitStmt (Return expr) = do
   emitExpr expr
   emit "  mov sp, fp"
   emit "  pop {fp, pc}"
-emitExpr (Var name expr) = do
+emitStmt (Var name expr) = do
   emitExpr expr
   emit "  push {r0, ip}"
   setLocal name
-emitExpr (Assign name expr) = do
+emitStmt (Assign name expr) = do
   emitExpr expr
   offset <- getLocal name
   emit $ "  str r0, [fp, #" <> show offset <> "]"
 
-withParams :: [Name] -> CodeGen a -> CodeGen a
-withParams params codegen = do
-  env <- get
-  let locals = Map.fromList (zip params [-16, -12 ..])
-  put $ env {locals = locals, nextLocal = -20}
-  codegen
-
-emitBinop :: Expr -> Expr -> CodeGen ()
-emitBinop left right = do
-  emitExpr left
-  emit "  push {r0, ip}"
-  emitExpr right
-  emit "  pop {r1, ip}"
+setupLocals :: [Name] -> CodeGen ()
+setupLocals params =
+  modify $ \env -> env {nextLocal = -4 * fromIntegral (length params)}
 
 emitProgram :: Program -> CodeGen ()
 emitProgram (Program statements) = do
-  mapM_ emitExpr statements
+  mapM_ emitStmt statements
 
 initEnv :: Env
-initEnv = Env {labelCount = 0, locals = empty, nextLocal = 0}
+initEnv = Env {labelCount = 0, locals = Map.empty, nextLocal = 0}
 
 runEmitter :: CodeGen a -> String
 runEmitter cg = execWriter $ runStateT cg initEnv

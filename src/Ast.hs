@@ -29,7 +29,7 @@ data Expr
 
 data Stmt
   = Return Expr
-  | Block [Expr]
+  | Block [Stmt]
   | If Expr Stmt Stmt
   | Function Name [Name] Stmt
   | Var Name Expr
