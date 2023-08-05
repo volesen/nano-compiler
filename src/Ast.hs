@@ -1,5 +1,3 @@
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-{-# HLINT ignore "Use newtype instead of data" #-}
 module Ast where
 
 type Name = String
@@ -24,5 +22,5 @@ data Expr
   | While Expr Expr
   deriving (Eq, Show)
 
-data Program = Program [Expr]
+newtype Program = Program [Expr]
   deriving (Eq, Show)
